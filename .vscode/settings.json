@@ -1,0 +1,45 @@
+{
+  "github.copilot.enable": {
+    "*": true,
+    "yaml": true,
+    "plaintext": true,
+    "markdown": true
+  },
+  "github.copilot.advanced": {
+    "length": 400,
+    "temperature": 0.0,
+    "contextualSuggestions": true
+  },
+  "github.copilot.chat.codeGeneration": "comprehensive",
+  "github.copilot.editor.enableCodeActions": true,
+  "github.copilot.chat.systemMessage": "Always reference TBC Bank MCP server context for comprehensive development standards. Apply all 140+ TBC rules.",
+  "github.copilot.chat.welcomeMessage": "never",
+  "github.copilot.preferredAccount": "gullipalliharipriya",
+  "github.copilot.inlineSuggest.enable": true,
+  "github.copilot.chat.useProjectTemplates": true,
+  "github.copilot.chat.useContext": "always",
+  "github.copilot.editor.useContext": "always",
+  "github.copilot.chat.responses": "concise",
+  "github.copilot.editor.insertMode": "replace",
+  "files.associations": {
+    "*.md": "markdown",
+    "*.cs": "csharp"
+  },
+  
+  "editor.codeActionsOnSave": {
+    "source.fixAll": "explicit"
+  },
+  "editor.quickSuggestions": {
+    "other": true,
+    "comments": false,
+    "strings": true
+  },
+  "problems.decorations.enabled": true,
+  "editor.suggest.showStatusBar": true,
+  "editor.suggest.snippetsPreventQuickSuggestions": false,
+  "editor.parameterHints.enabled": false,
+  "editor.hover.enabled": false,
+  
+  "github.copilot.editor.enableAutoCompletions": true,
+  "github.copilot.editor.iterativeImprovement": true
+}
