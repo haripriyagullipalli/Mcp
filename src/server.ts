@@ -25,6 +25,7 @@ export const server = new McpServer({
   },
 });
 
+
 // -------------------------------
 // 2️⃣ Separate guideline pages
 // -------------------------------
@@ -39,12 +40,24 @@ const guidelineTemplate = new ResourceTemplate("guideline://{id}", {
 
 server.resource("guideline", guidelineTemplate, async (uri, variables) => {
   const id = Array.isArray(variables.id) ? variables.id[0] : variables.id;
-  const g = guidelines[id];
+  console.error(`\n🔍 === GUIDELINE REQUEST ===`);
+  console.error(`📨 Requested ID: "${id}"`);
+  console.error(`📋 URI: ${uri.toString()}`);
+  const decodedId = decodeURIComponent(id).trim(); // Don't lowercase for numeric IDs
+  console.error(`🔓 Decoded ID: "${decodedId}"`);
+  console.error(`📚 Available guideline IDs:`);
+  Object.keys(guidelines).forEach((k, idx) => {
+    console.error(`   ${idx + 1}. "${k}" - ${guidelines[k].title}`);
+  });
+  // Find the guideline by exact match
+  const g = guidelines[decodedId];
+  console.error(`✅ Match found: ${g ? `"${decodedId}" - ${g.title}` : "❌ NO MATCH"}`);
+  console.error(`=== END REQUEST ===\n`);
   return {
     contents: [
       {
         uri: uri.toString(),
-        text: g?.text || "",
+        text: g?.text || "[No guideline text found for this resource]",
         mimeType: "text/plain",
       },
     ],
@@ -153,8 +166,24 @@ export async function startServer(
       await transport.handleRequest(req, res, req.body);
     });
 
-    app.listen(port, () => {
-      console.error(`✅ MCP server running at http://localhost:${port}/mcp`);
+    return new Promise<void>((resolve, reject) => {
+      const httpServer = app.listen(port, () => {
+        console.error(`✅ MCP server running at http://localhost:${port}/mcp`);
+      });
+      
+      httpServer.on('error', (err) => {
+        console.error('❌ Server error:', err);
+        reject(err);
+      });
+      
+      // Keep the process alive by not resolving the promise
+      process.on('SIGINT', () => {
+        console.error('\n🛑 Shutting down server...');
+        httpServer.close(() => {
+          console.error('✅ Server closed');
+          process.exit(0);
+        });
+      });
     });
   } else {
     const transport = new StdioServerTransport();

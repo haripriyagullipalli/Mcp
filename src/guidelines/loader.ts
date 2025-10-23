@@ -68,23 +68,23 @@ export async function loadGuidelines(): Promise<GuidelinesMap> {
   }
 
   if (childPageIds.length === 0) {
-    // No child pages, treat main page as a single resource
-    guidelines[mainTitle] = {
+    // No child pages, treat main page as a single resource - USE PAGE ID AS KEY
+    guidelines[MAIN_PAGE_ID] = {
       title: mainTitle,
       text: `${mainText}\nURL: ${mainUrl}`,
       url: mainUrl
     };
-    console.error(`✅ Loaded main page as single guideline resource: ${mainTitle}`);
+    console.error(`✅ Loaded main page as single guideline resource: ${mainTitle} (ID: ${MAIN_PAGE_ID})`);
   } else {
-    // Main page itself as a resource
-    guidelines[mainTitle] = {
+    // Main page itself as a resource - USE PAGE ID AS KEY
+    guidelines[MAIN_PAGE_ID] = {
       title: mainTitle,
       text: `${mainText}\nURL: ${mainUrl}`,
       url: mainUrl
     };
-    console.error(`✅ Loaded main page as guideline resource: ${mainTitle}`);
+    console.error(`✅ Loaded main page as guideline resource: ${mainTitle} (ID: ${MAIN_PAGE_ID})`);
 
-    // Each child page as a separate resource, using Confluence page title as key
+    // Each child page as a separate resource, using Confluence PAGE ID as key
     for (const childId of childPageIds) {
       try {
         const childPage: PageContent = await fetchPageContent(childId);
@@ -92,12 +92,12 @@ export async function loadGuidelines(): Promise<GuidelinesMap> {
         const childTitle = childPage.title || `Child Page (${childId})`;
         const childText = $child.text().replace(/\s+/g, ' ').trim();
         const childUrl = `${BASE_URL}/pages/${childId}`;
-        guidelines[childTitle] = {
+        guidelines[childId] = {  // USE PAGE ID AS KEY
           title: childTitle,
           text: `${childText}\nURL: ${childUrl}`,
           url: childUrl
         };
-        console.error(`✅ Loaded child guideline: ${childTitle}`);
+        console.error(`✅ Loaded child guideline: ${childTitle} (ID: ${childId})`);
       } catch (err) {
         console.error(`❌ Failed to load child page ${childId}:`, err);
       }
@@ -105,7 +105,16 @@ export async function loadGuidelines(): Promise<GuidelinesMap> {
   }
 
   Object.assign(guidelines);
-  console.error(`📋 Total guidelines loaded: ${Object.keys(guidelines).length}`);
+  console.error(`📋 Total guidelines loaded: ${Object.keys(guidelines).length}`)
+  
+  console.error('\n=== GUIDELINE IDS (KEYS) ===');
+  Object.keys(guidelines).forEach((key, index) => {
+    console.error(`${index + 1}. Page ID: "${key}"`);
+    console.error(`   Title: "${guidelines[key].title}"`);
+    console.error(`   URL: ${guidelines[key].url}`);
+  });
+  console.error('=== END GUIDELINE IDS ===\n');
+  
   return guidelines;
 }
 
