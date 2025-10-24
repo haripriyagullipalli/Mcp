@@ -1,120 +1,145 @@
 import fetch from "node-fetch";
 import * as cheerio from "cheerio";
 import { Guideline, GuidelinesMap } from "./types";
-import fs from "fs";
 import path from "path";
+import { logger } from "../utils/logger";
 
 require("dotenv").config({ path: path.resolve(__dirname, "../../.env") });
 
-console.error("🔧 Environment loaded - Base URL:", process.env.CONFLUENCE_BASE_URL);
-
 const BASE_URL = process.env.CONFLUENCE_BASE_URL;
-const EMAIL = process.env.CONFLUENCE_EMAIL!;
-const API_TOKEN = process.env.CONFLUENCE_API_TOKEN!;
-const MAIN_PAGE_ID = process.env.CONFLUENCE_MAIN_PAGE_ID!;
-// if (!MAIN_PAGE_ID) throw new Error("Environment variable MAIN_PAGE_ID is not set.");
+const EMAIL = process.env.CONFLUENCE_EMAIL;
+const API_TOKEN = process.env.CONFLUENCE_API_TOKEN;
+const MAIN_PAGE_ID = process.env.CONFLUENCE_MAIN_PAGE_ID;
 
-// Helper: returns the authorization header
-function getAuthHeader() {
+if (!BASE_URL || !EMAIL || !API_TOKEN || !MAIN_PAGE_ID) {
+  throw new Error(
+    "Missing required environment variables: CONFLUENCE_BASE_URL, CONFLUENCE_EMAIL, CONFLUENCE_API_TOKEN, CONFLUENCE_MAIN_PAGE_ID"
+  );
+}
+
+logger.debug(`Confluence configuration loaded - Base URL: ${BASE_URL}`);
+
+// Store all loaded guidelines
+export const guidelines: GuidelinesMap = {};
+
+/**
+ * Returns the authorization header for Confluence API requests
+ */
+function getAuthHeader(): { Authorization: string } {
   const creds = Buffer.from(`${EMAIL}:${API_TOKEN}`).toString("base64");
   return { Authorization: `Basic ${creds}` };
 }
 
-// Fetch a Confluence page by ID
 type PageContent = { html: string; title: string };
+
+/**
+ * Fetches a Confluence page by ID
+ */
 async function fetchPageContent(pageId: string): Promise<PageContent> {
   const url = `${BASE_URL}/rest/api/content/${pageId}?expand=body.view`;
   const res = await fetch(url, { headers: getAuthHeader() });
+  
   if (!res.ok) {
     const errorText = await res.text();
-    throw new Error(`Failed to fetch page ${pageId}: ${res.status} ${res.statusText} - ${errorText}`);
+    throw new Error(
+      `Failed to fetch page ${pageId}: ${res.status} ${res.statusText} - ${errorText}`
+    );
   }
+  
   const data: any = await res.json();
   return { html: data.body.view.value, title: data.title };
 }
 
-// Object to store all guidelines
-export const guidelines: GuidelinesMap = {};
-
-// Helper: fetch child page IDs for a given page
+/**
+ * Fetches child page IDs for a given Confluence page
+ */
 async function fetchChildPageIds(pageId: string): Promise<string[]> {
   const url = `${BASE_URL}/rest/api/content/${pageId}/child/page`;
   const res = await fetch(url, { headers: getAuthHeader() });
+  
   if (!res.ok) {
     const errorText = await res.text();
-    throw new Error(`Failed to fetch child pages for ${pageId}: ${res.status} ${res.statusText} - ${errorText}`);
+    throw new Error(
+      `Failed to fetch child pages for ${pageId}: ${res.status} ${res.statusText} - ${errorText}`
+    );
   }
+  
   const data: any = await res.json();
-  if (!data.results) return [];
-  return data.results.map((page: any) => page.id);
+  return data.results?.map((page: any) => page.id) || [];
 }
 
-// Load only guideline pages linked from the main page
+/**
+ * Loads guidelines from Confluence
+ * Fetches the main page and all its child pages, storing them by page ID
+ */
 export async function loadGuidelines(): Promise<GuidelinesMap> {
-  console.error(`🔄 Loading guidelines from page ID: ${MAIN_PAGE_ID}`);
-  // Fetch main page content and title
-  const mainPage: PageContent = await fetchPageContent(MAIN_PAGE_ID!);
-  const $main = cheerio.load(mainPage.html);
-  const mainTitle = mainPage.title || `Main Page (${MAIN_PAGE_ID})`;
-  const mainText = $main.text().replace(/\s+/g, ' ').trim();
-  const mainUrl = `${BASE_URL}/pages/${MAIN_PAGE_ID}`;
+  const pageId = MAIN_PAGE_ID!;
+  logger.info(`Loading guidelines from Confluence page: ${pageId}`);
 
-  // Try to fetch child page IDs
-  let childPageIds: string[] = [];
   try {
-    childPageIds = await fetchChildPageIds(MAIN_PAGE_ID!);
-  } catch (err) {
-    console.error(`❌ Failed to fetch child pages for main page:`, err);
-  }
+    // Fetch main page
+    const mainPage = await fetchPageContent(pageId);
+    const $main = cheerio.load(mainPage.html);
+    const mainTitle = mainPage.title || `Main Page (${pageId})`;
+    const mainText = $main.text().replace(/\s+/g, ' ').trim();
+    const mainUrl = `${BASE_URL}/pages/${pageId}`;
 
-  if (childPageIds.length === 0) {
-    // No child pages, treat main page as a single resource - USE PAGE ID AS KEY
-    guidelines[MAIN_PAGE_ID] = {
+    // Store main page
+    guidelines[pageId] = {
       title: mainTitle,
       text: `${mainText}\nURL: ${mainUrl}`,
-      url: mainUrl
+      url: mainUrl,
     };
-    console.error(`✅ Loaded main page as single guideline resource: ${mainTitle} (ID: ${MAIN_PAGE_ID})`);
-  } else {
-    // Main page itself as a resource - USE PAGE ID AS KEY
-    guidelines[MAIN_PAGE_ID] = {
-      title: mainTitle,
-      text: `${mainText}\nURL: ${mainUrl}`,
-      url: mainUrl
-    };
-    console.error(`✅ Loaded main page as guideline resource: ${mainTitle} (ID: ${MAIN_PAGE_ID})`);
+    logger.debug(`Loaded main page: ${mainTitle}`);
 
-    // Each child page as a separate resource, using Confluence PAGE ID as key
-    for (const childId of childPageIds) {
-      try {
-        const childPage: PageContent = await fetchPageContent(childId);
-        const $child = cheerio.load(childPage.html);
-        const childTitle = childPage.title || `Child Page (${childId})`;
-        const childText = $child.text().replace(/\s+/g, ' ').trim();
-        const childUrl = `${BASE_URL}/pages/${childId}`;
-        guidelines[childId] = {  // USE PAGE ID AS KEY
-          title: childTitle,
-          text: `${childText}\nURL: ${childUrl}`,
-          url: childUrl
-        };
-        console.error(`✅ Loaded child guideline: ${childTitle} (ID: ${childId})`);
-      } catch (err) {
-        console.error(`❌ Failed to load child page ${childId}:`, err);
+    // Fetch child pages
+    let childPageIds: string[] = [];
+    try {
+      childPageIds = await fetchChildPageIds(pageId);
+    } catch (err) {
+      logger.warn(`Failed to fetch child pages`, err);
+    }
+
+    // Load each child page
+    if (childPageIds.length > 0) {
+      logger.info(`Loading ${childPageIds.length} child page(s)...`);
+
+      for (const childId of childPageIds) {
+        try {
+          const childPage = await fetchPageContent(childId);
+          const $child = cheerio.load(childPage.html);
+          const childTitle = childPage.title || `Child Page (${childId})`;
+          const childText = $child.text().replace(/\s+/g, ' ').trim();
+          const childUrl = `${BASE_URL}/pages/${childId}`;
+
+          guidelines[childId] = {
+            title: childTitle,
+            text: `${childText}\nURL: ${childUrl}`,
+            url: childUrl,
+          };
+          logger.debug(`Loaded child page: ${childTitle}`);
+        } catch (err) {
+          logger.error(`Failed to load child page ${childId}`, err);
+        }
       }
     }
-  }
 
-  Object.assign(guidelines);
-  console.error(`📋 Total guidelines loaded: ${Object.keys(guidelines).length}`)
-  
-  console.error('\n=== GUIDELINE IDS (KEYS) ===');
-  Object.keys(guidelines).forEach((key, index) => {
-    console.error(`${index + 1}. Page ID: "${key}"`);
-    console.error(`   Title: "${guidelines[key].title}"`);
-    console.error(`   URL: ${guidelines[key].url}`);
-  });
-  console.error('=== END GUIDELINE IDS ===\n');
-  
-  return guidelines;
+    const totalLoaded = Object.keys(guidelines).length;
+    logger.info(`Successfully loaded ${totalLoaded} guideline(s)`);
+
+    // Log detailed info only in debug mode
+    if (process.env.LOG_LEVEL === 'DEBUG') {
+      logger.debug('=== LOADED GUIDELINES ===');
+      Object.entries(guidelines).forEach(([id, guideline], index) => {
+        logger.debug(`${index + 1}. [${id}] ${guideline.title}`);
+      });
+      logger.debug('=========================');
+    }
+
+    return guidelines;
+  } catch (error) {
+    logger.error('Failed to load guidelines from Confluence', error);
+    throw error;
+  }
 }
 
